@@ -4,7 +4,7 @@
 #define TOPIC_SUFFIX_HUMIDITY "/humidity"
 #define TOPIC_SUFFIX_TEMPERATURE "/temperature"
 
-#define SLEEP_TIME_ERROR_SEC (15*60)
+#define SLEEP_TIME_ERROR_SEC (30*60)
 #define SLEEP_TIME_REGULAR_SEC (30*60)
 
 #define WIFI_TIMEOUT_SEC 120

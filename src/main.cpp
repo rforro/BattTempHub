@@ -6,7 +6,10 @@
 #include "config.h"
 #include "smarthome.h"
 
-#define BATTERY_ADC_PIN 34
+#define BATTERY_ADC_PIN 36  // VP pin
+#define BATTERY_MEASURE_ENABLE_PIN 32
+#define R1 10000  // ohm
+#define R2 3300  // ohm
 
 BME280 bme280;
 bool bme_running = false;
@@ -59,7 +62,6 @@ void publishMsg(const char *topic, const char *msg) {
   if (!mqttClient.publish(topic, msg)) {
       Sprintln("Publishing failed");
   };
-  // delay(50);
 }
 
 void setup() {
@@ -145,8 +147,12 @@ void setup() {
       publishMsg(topic, "bme280_failure");
     };
     Sprintln("failed");
-    // goodnightEsp(SLEEP_TIME_ERROR_SEC);
-  }  
+    goodnightEsp(SLEEP_TIME_ERROR_SEC);
+  }
+
+  analogSetAttenuation(ADC_0db);
+  adcAttachPin(BATTERY_ADC_PIN);
+  pinMode(BATTERY_MEASURE_ENABLE_PIN, OUTPUT);
 }
 
 void loop() {
@@ -155,7 +161,12 @@ void loop() {
   bme280.setMode(MODE_FORCED);
 
   Sprint("Measuring battery voltage: ");
-  float voltage = analogRead(BATTERY_ADC_PIN) * 3.3 / 4095;
+  digitalWrite(BATTERY_MEASURE_ENABLE_PIN, HIGH);
+  delay(10);
+  float voltage = (analogRead(BATTERY_ADC_PIN)*1.1/4095.0)*(R1+R2)/R2;
+  digitalWrite(BATTERY_MEASURE_ENABLE_PIN, LOW);
+  pinMode(BATTERY_MEASURE_ENABLE_PIN, INPUT);
+  
   Sprintln(voltage);
   if (createTopic(topic, TOPIC_SUFFIX_BATTERY, sizeof(topic)) == 0) {
     char batt[8];
