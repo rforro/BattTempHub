@@ -70,7 +70,7 @@ void setup() {
 #endif
   Sprintln("\n Starting measurement iteration");
 
-#if STATIC_IP == 0
+#if STATIC_IP == 1
   if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, INADDR_NONE)) {
     Sprintln("Wifi failed to configure");
   }
