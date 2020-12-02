@@ -1,15 +1,12 @@
 #include <Arduino.h>
 #include <PubSubClient.h>
-#include <WiFi.h>
+#include <ESP8266WiFi.h>
 #include <Wire.h>
 #include <SparkFunBME280.h>
 #include "config.h"
 #include "smarthome.h"
 
-#define BATTERY_ADC_PIN 36  // VP pin
-#define BATTERY_MEASURE_ENABLE_PIN 32
-#define R1 10000  // ohm
-#define R2 3300  // ohm
+ADC_MODE(ADC_VCC);
 
 BME280 bme280;
 bool bme_running = false;
@@ -37,17 +34,9 @@ unsigned long timestamp;
   #define Sprintf(a,b)
 #endif
 
-uint32_t espGetChipId() {
-  uint32_t chip_id = 0;
-  for (uint8_t i = 0; i < 17; i = i + 8) {
-      chip_id |= ((ESP.getEfuseMac() >> (40u - i)) & 0xffu) << i;
-  }
-  return chip_id;
-}
-
 void goodnightEsp(uint32_t sec) {
-  esp_sleep_enable_timer_wakeup(sec * 1000000ULL);
-  esp_deep_sleep_start();
+  delay(1);
+  ESP.deepSleep(sec * 1000000ULL, WAKE_RF_DEFAULT); //ToDo implement WAKE_RF_DISABLE but with reenable machanism
 }
 
 int createTopic(char *dest, const char *suffix, size_t dest_length) {
@@ -70,6 +59,8 @@ void setup() {
 #endif
   Sprintln("\n Starting measurement iteration");
 
+  WiFi.persistent(false);
+  WiFi.mode(WIFI_STA);
 #if STATIC_IP == 1
   if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, INADDR_NONE)) {
     Sprintln("Wifi failed to configure");
@@ -92,7 +83,7 @@ void setup() {
   Sprintln("Wifi connection was successfully created");
 
   
-  if (snprintf(client_id, sizeof(client_id), "ESP-%08X", espGetChipId()) >= (int) sizeof(client_id)) {
+  if (snprintf(client_id, sizeof(client_id), "ESP-%08X", ESP.getChipId()) >= (int) sizeof(client_id)) {
     Sprintln("Mqtt client id cannot be constructed");
   };
   
@@ -122,8 +113,8 @@ void setup() {
     Sprintln("Mqtt base topic cannot be constructed");
   };
 
-
-  if (Wire.begin()) {
+  Wire.begin();
+  if (Wire.status() == I2C_OK) {
     Wire.setClock(400000);
     Sprintln("I2C runnig at 400KHz");
   } else {
@@ -149,10 +140,6 @@ void setup() {
     Sprintln("failed");
     goodnightEsp(SLEEP_TIME_ERROR_SEC);
   }
-
-  analogSetAttenuation(ADC_0db);
-  adcAttachPin(BATTERY_ADC_PIN);
-  pinMode(BATTERY_MEASURE_ENABLE_PIN, OUTPUT);
 }
 
 void loop() {
@@ -161,13 +148,9 @@ void loop() {
   bme280.setMode(MODE_FORCED);
 
   Sprint("Measuring battery voltage: ");
-  digitalWrite(BATTERY_MEASURE_ENABLE_PIN, HIGH);
-  delay(10);
-  float voltage = (analogRead(BATTERY_ADC_PIN)*1.1/4095.0)*(R1+R2)/R2;
-  digitalWrite(BATTERY_MEASURE_ENABLE_PIN, LOW);
-  pinMode(BATTERY_MEASURE_ENABLE_PIN, INPUT);
-  
+  float voltage = ESP.getVcc() / 1024.0f;
   Sprintln(voltage);
+  
   if (createTopic(topic, TOPIC_SUFFIX_BATTERY, sizeof(topic)) == 0) {
     char batt[8];
     snprintf(batt, sizeof(batt), "%.2f", voltage);
@@ -191,10 +174,11 @@ void loop() {
     publishMsg(topic, hum);
   };
 
+  mqttClient.loop();
   delay(100);  // leave some time for pubsubclient
 
   mqttClient.disconnect();
-  WiFi.disconnect();
+  WiFi.disconnect(true);
 
   Sprintln("All done, sleeping...");
   goodnightEsp(SLEEP_TIME_REGULAR_SEC); 
