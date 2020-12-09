@@ -36,7 +36,7 @@ unsigned long timestamp;
 
 void goodnightEsp(uint32_t sec) {
   delay(1);
-  ESP.deepSleep(sec * 1000000ULL, WAKE_RF_DEFAULT); //ToDo implement WAKE_RF_DISABLE but with reenable machanism
+  ESP.deepSleep(sec * 1000000ULL, WAKE_RF_DISABLED);
 }
 
 int createTopic(char *dest, const char *suffix, size_t dest_length) {
@@ -58,6 +58,12 @@ void setup() {
   Serial.begin(115200);
 #endif
   Sprintln("\n Starting measurement iteration");
+
+  // reanable wifi radio
+  WiFi.forceSleepBegin();
+  delay(1);
+  WiFi.forceSleepWake();
+  delay(1);
 
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
