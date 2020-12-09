@@ -1,0 +1,16 @@
+/* Change values and rename file to config.h */
+
+#define STATIC_IP 1
+#define IP 192,168,1,10
+#define GATEWAY 192,168,1,1
+#define SUBNET 255,255,255,0
+#define PRIMARY_DNS 192,168,1,1
+
+#define WIFI_SSID "wifi-ap"
+#define WIFI_PASSWORD "secret"
+
+#define MQTT_SERVER "192.168.1.1"
+#define MQTT_PORT 1883
+
+#define MQTT_USER "username"
+#define MQTT_PASSWORD "password"
