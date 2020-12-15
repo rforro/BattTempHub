@@ -7,7 +7,7 @@
 #define WIFI_SSID "cicik"
 #define WIFI_PASSWORD "no-internet-access-allowed"
 
-#define MQTT_SERVER "letterdetect.home"
+#define MQTT_SERVER "homeassistant.home"
 #define MQTT_PORT 1883
 
 #define MQTT_USER "user"

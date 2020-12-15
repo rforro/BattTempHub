@@ -19,8 +19,9 @@ IPAddress primaryDNS(PRIMARY_DNS);
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
-char client_id[15];
+char client_id[19];
 char base_topic[30];
+char topic_state[50];
 
 // RTC is arranged into 4 byte blocks,
 // so we have to introduce some padding.
@@ -77,6 +78,8 @@ uint32_t calculateCRC32(const uint8_t *data, size_t length) {
 
 void setup() {
   unsigned long timestamp;
+  char topic_config[50];
+  char msg_config[500];
 
 #if DEBUG == 1
   Serial.begin(115200);
@@ -138,11 +141,11 @@ void setup() {
 
   // Write current connection info into RTC
   rtcWifiData.channel = WiFi.channel();
-  memcpy( rtcWifiData.bssid, WiFi.BSSID(), 6 );
+  memcpy(rtcWifiData.bssid, WiFi.BSSID(), 6);
   rtcWifiData.crc32 = calculateCRC32( ((uint8_t*)&rtcWifiData) + 4, sizeof(rtcWifiData) - 4);
-  ESP.rtcUserMemoryWrite( 0, (uint32_t*)&rtcWifiData, sizeof(rtcWifiData) );
+  ESP.rtcUserMemoryWrite(0, (uint32_t*)&rtcWifiData, sizeof(rtcWifiData));
   
-  if (snprintf(client_id, sizeof(client_id), "ESP-%08X", ESP.getChipId()) >= (int) sizeof(client_id)) {
+  if (snprintf(client_id, sizeof(client_id), "esp8266-%08X", ESP.getChipId()) >= (int) sizeof(client_id)) {
     Sprintln("Mqtt client id cannot be constructed");
   };
   
@@ -168,9 +171,43 @@ void setup() {
       }
   }
 
-  if (snprintf(base_topic, sizeof(base_topic), TOPIC_BASE, client_id) >= (int) sizeof(base_topic)) {
-    Sprintln("Mqtt base topic cannot be constructed");
+  if (snprintf(topic_state, sizeof(topic_state), TOPIC_HASS_STATE, client_id) >= (int) sizeof(topic_state)) {
+    Sprintln("Mqtt general state topic cannot be constructed");
   };
+
+  if (snprintf(msg_config, sizeof(msg_config), PAYLOAD_HASS_CONFIG_TEMP, topic_state, client_id, client_id, client_id) >= (int) sizeof(msg_config)) {
+    Sprintln("Mqtt temp config msg cannot be constructed");
+  };
+  if (snprintf(topic_config, sizeof(topic_config), TOPIC_HASS_CONFIG_TEMP, client_id) >= (int) sizeof(topic_config)) {
+    Sprintln("Mqtt config topic cannot be constructed");
+  };
+  // publish temperature configuration
+  publishMsg(topic_config, msg_config);
+
+  if (snprintf(msg_config, sizeof(msg_config), PAYLOAD_HASS_CONFIG_HUM, topic_state, client_id, client_id) >= (int) sizeof(msg_config)) {
+    Sprintln("Mqtt humidity config msg cannot be constructed");
+  };
+  if (snprintf(topic_config, sizeof(topic_config), TOPIC_HASS_CONFIG_HUM, client_id) >= (int) sizeof(topic_config)) {
+    Sprintln("Mqtt config topic cannot be constructed");
+  };
+  // publish humidity configuration
+  publishMsg(topic_config, msg_config);
+
+  if (snprintf(msg_config, sizeof(msg_config), PAYLOAD_HASS_CONFIG_BATT, topic_state, client_id, client_id) >= (int) sizeof(msg_config)) {
+    Sprintln("Mqtt battery config msg cannot be constructed");
+  };
+
+  if (snprintf(topic_config, sizeof(topic_config), TOPIC_HASS_CONFIG_BATT, client_id) >= (int) sizeof(topic_config)) {
+    Sprintln("Mqtt config topic cannot be constructed");
+  };
+  // publish battery configuration
+  publishMsg(topic_config, msg_config);
+
+  // TODO add attributes like uptime, wifi signal, MAC
+  // if (snprintf(topic_config, sizeof(topic_config), "homeassistant/sensor/%s/attributes", client_id) >= (int) sizeof(topic_config)) {
+  //   Sprintln("Mqtt attribute topic cannot be constructed");
+  // };
+  // publishMsg(topic_config, PAYLOAD_HASS_ATTR);
 
   Wire.begin();
   if (Wire.status() == I2C_OK) {
@@ -191,49 +228,47 @@ void setup() {
     bme280.setFilter(0);
     Sprintln("success");
   } else {
-    char topic[100];
-    if (createTopic(topic, TOPIC_SUFFIX_ERROR, sizeof(topic)) == 0) {
-      publishMsg(topic, "bme280_failure");
-    };
+    // TODO FIX THIS
+    // char topic[100];
+    // if (createTopic(topic, TOPIC_SUFFIX_ERROR, sizeof(topic)) == 0) {
+    //   publishMsg(topic, "bme280_failure");
+    // };
     Sprintln("failed");
     goodnightEsp(SLEEP_TIME_ERROR_SEC);
   }
 }
 
 void loop() {
-  char topic[100];
+  int voltage_percentage = 0;
+  char msg[100];
 
   bme280.setMode(MODE_FORCED);
 
   Sprint("Measuring battery voltage: ");
   float voltage = ESP.getVcc() / 1024.0f;
-  Sprintln(voltage);
+  Sprint(voltage);
+
+  if (voltage < BATTERY_CR123A_LOW) {
+    voltage_percentage = 0;
+  } else if (voltage > BATTERY_CR123A_HIGH) {
+    voltage_percentage = 100;
+  } else {
+    voltage_percentage = (voltage - BATTERY_CR123A_LOW) * 100 / (BATTERY_CR123A_HIGH - BATTERY_CR123A_LOW);
+  }
+  Sprint(" = ");
+  Sprintln(voltage_percentage);
   
-  if (createTopic(topic, TOPIC_SUFFIX_BATTERY, sizeof(topic)) == 0) {
-    char batt[8];
-    snprintf(batt, sizeof(batt), "%.2f", voltage);
-    publishMsg(topic, batt);
-  };
-
   Sprintln("Starting temp hum measurement");
-  while(bme280.isMeasuring() == true) ; // Wait until measurement done
+  while(bme280.isMeasuring() == true) ; // Wait until measurement is done
 
-  Sprintln("Publishing temperature");
-  if (createTopic(topic, TOPIC_SUFFIX_TEMPERATURE, sizeof(topic)) == 0) {
-    char temp[8];
-    snprintf(temp, sizeof(temp), "%.1f", bme280.readTempC());
-    publishMsg(topic, temp);
+  if (snprintf(msg, sizeof(msg), PAYLOAD_HASS_STATE, bme280.readTempC(), bme280.readFloatHumidity(), voltage_percentage) >= (int) sizeof(msg)) {
+    Sprintln("Mqtt state payload cannot be constructed");
   };
+  publishMsg(topic_state, msg);
 
-  Sprintln("Publishing humidity");
-  if (createTopic(topic, TOPIC_SUFFIX_HUMIDITY, sizeof(topic)) == 0) {
-    char hum[8];
-    snprintf(hum, sizeof(hum), "%.0f", bme280.readFloatHumidity());
-    publishMsg(topic, hum);
-  };
 
   mqttClient.loop();
-  delay(100);  // leave some time for pubsubclient
+  // delay(100);  // leave some time for pubsubclient
 
   mqttClient.disconnect();
   WiFi.disconnect(true);
