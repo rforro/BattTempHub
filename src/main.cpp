@@ -5,10 +5,12 @@
 #include <SparkFunBME280.h>
 #include "config.h"
 #include "smarthome.h"
+#include <SmarthaurinHassEmbed.h>
 
 ADC_MODE(ADC_VCC);
 
 BME280 bme280;
+SmarthaurinHassEmbed smahe;
 
 #if STATIC_IP == 1
 IPAddress local_IP(IP);
@@ -171,7 +173,11 @@ void setup() {
       }
   }
 
-  if (snprintf(topic_state, sizeof(topic_state), TOPIC_HASS_STATE, client_id) >= (int) sizeof(topic_state)) {
+  // if (snprintf(topic_state, sizeof(topic_state), TOPIC_HASS_STATE, client_id) >= (int) sizeof(topic_state)) {
+  //   Sprintln("Mqtt general state topic cannot be constructed");
+  // };
+
+  if (!smahe.getTopicSensorState(topic_state, sizeof(topic_state))){
     Sprintln("Mqtt general state topic cannot be constructed");
   };
 
@@ -184,24 +190,24 @@ void setup() {
   // publish temperature configuration
   publishMsg(topic_config, msg_config);
 
-  if (snprintf(msg_config, sizeof(msg_config), PAYLOAD_HASS_CONFIG_HUM, topic_state, client_id, client_id) >= (int) sizeof(msg_config)) {
-    Sprintln("Mqtt humidity config msg cannot be constructed");
-  };
-  if (snprintf(topic_config, sizeof(topic_config), TOPIC_HASS_CONFIG_HUM, client_id) >= (int) sizeof(topic_config)) {
-    Sprintln("Mqtt config topic cannot be constructed");
-  };
-  // publish humidity configuration
-  publishMsg(topic_config, msg_config);
+  // if (snprintf(msg_config, sizeof(msg_config), PAYLOAD_HASS_CONFIG_HUM, topic_state, client_id, client_id) >= (int) sizeof(msg_config)) {
+  //   Sprintln("Mqtt humidity config msg cannot be constructed");
+  // };
+  // if (snprintf(topic_config, sizeof(topic_config), TOPIC_HASS_CONFIG_HUM, client_id) >= (int) sizeof(topic_config)) {
+  //   Sprintln("Mqtt config topic cannot be constructed");
+  // };
+  // // publish humidity configuration
+  // publishMsg(topic_config, msg_config);
 
-  if (snprintf(msg_config, sizeof(msg_config), PAYLOAD_HASS_CONFIG_BATT, topic_state, client_id, client_id) >= (int) sizeof(msg_config)) {
-    Sprintln("Mqtt battery config msg cannot be constructed");
-  };
+  // if (snprintf(msg_config, sizeof(msg_config), PAYLOAD_HASS_CONFIG_BATT, topic_state, client_id, client_id) >= (int) sizeof(msg_config)) {
+  //   Sprintln("Mqtt battery config msg cannot be constructed");
+  // };
 
-  if (snprintf(topic_config, sizeof(topic_config), TOPIC_HASS_CONFIG_BATT, client_id) >= (int) sizeof(topic_config)) {
-    Sprintln("Mqtt config topic cannot be constructed");
-  };
-  // publish battery configuration
-  publishMsg(topic_config, msg_config);
+  // if (snprintf(topic_config, sizeof(topic_config), TOPIC_HASS_CONFIG_BATT, client_id) >= (int) sizeof(topic_config)) {
+  //   Sprintln("Mqtt config topic cannot be constructed");
+  // };
+  // // publish battery configuration
+  // publishMsg(topic_config, msg_config);
 
   // TODO add attributes like uptime, wifi signal, MAC
   // if (snprintf(topic_config, sizeof(topic_config), "homeassistant/sensor/%s/attributes", client_id) >= (int) sizeof(topic_config)) {
