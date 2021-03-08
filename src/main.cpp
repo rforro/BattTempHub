@@ -34,7 +34,7 @@ struct {
 } rtcWifiData;
 
 void goodnightEsp(uint32_t sec) {
-  delay(2000);
+  delay(10);
   ESP.deepSleep(sec * 1000000ULL, WAKE_RF_DISABLED);
 }
 
@@ -64,9 +64,19 @@ uint32_t calculateCRC32(const uint8_t *data, size_t length) {
 void setup() {
   unsigned long timestamp;
   char client_id[19], topic_base[50];
+  int voltage_percentage;
+  float voltage;
 
   SerBegin(115200);
   SerPrintln("\nStarting measurement iteration");
+
+  SerPrint("Measuring battery voltage: ");
+  voltage = ESP.getVcc() / 1024.0f;
+  SerPrint(voltage);
+  SerPrint(" = ");
+  voltage_percentage = MyBattery.calcCr123Percentage(voltage);
+  SerPrintln(voltage_percentage);
+  if (voltage_percentage == 0) goodnightEsp(0);
 
   // Read WiFi settings from RTC memory
   bool rtcDataValid = false;
@@ -253,37 +263,29 @@ void setup() {
     SerPrintln("failed");
     goodnightEsp(SLEEP_TIME_ERROR_SEC);
   }
+
+  {
+    char msg[100];
+
+    bme280.setMode(MODE_FORCED);    
+    SerPrintln("Wating for temp hum measurement");
+    while(bme280.isMeasuring() == true) ; // Wait until measurement is done
+
+    if (snprintf(msg, sizeof(msg), HASS_PAYLOAD_STATE, bme280.readTempC(), bme280.readFloatHumidity(), voltage_percentage) >= (int) sizeof(msg)) {
+      SerPrintln("Mqtt state payload cannot be constructed");
+    };
+    publishMsg(topic_state, msg);
+
+
+    mqttClient.loop();
+    // delay(100);  // leave some time for pubsubclient
+
+    mqttClient.disconnect();
+    WiFi.disconnect(true);
+
+    SerPrintln("All done, sleeping...");
+    goodnightEsp(SLEEP_TIME_REGULAR_SEC);
+  }
 }
 
-void loop() {
-  int voltage_percentage = 0;
-  char msg[100];
-  float voltage;
-
-  bme280.setMode(MODE_FORCED);
-
-  SerPrint("Measuring battery voltage: ");
-  voltage = ESP.getVcc() / 1024.0f;
-  SerPrint(voltage);
-  SerPrint(" = ");
-  voltage_percentage = MyBattery.calcCr123Percentage(voltage);
-  SerPrintln(voltage_percentage);
-  
-  SerPrintln("Wating for temp hum measurement");
-  while(bme280.isMeasuring() == true) ; // Wait until measurement is done
-
-  if (snprintf(msg, sizeof(msg), HASS_PAYLOAD_STATE, bme280.readTempC(), bme280.readFloatHumidity(), voltage_percentage) >= (int) sizeof(msg)) {
-    SerPrintln("Mqtt state payload cannot be constructed");
-  };
-  publishMsg(topic_state, msg);
-
-
-  mqttClient.loop();
-  // delay(100);  // leave some time for pubsubclient
-
-  mqttClient.disconnect();
-  WiFi.disconnect(true);
-SerPrintln(millis());
-  SerPrintln("All done, sleeping...");
-  goodnightEsp(SLEEP_TIME_REGULAR_SEC); 
-}
+void loop() {}
