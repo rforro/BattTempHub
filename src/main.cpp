@@ -1,17 +1,18 @@
 #include <Arduino.h>
-#include <PubSubClient.h>
+#include <ArduinoJson.h>
 #include <ESP8266WiFi.h>
-#include <Wire.h>
+#include <EspChipId.h>
+#include <MyBattery.h>
+#include <PubSubClient.h>
+#include <SerPrint.h>
 #include <SparkFunBME280.h>
+#include <Wire.h>
 #include "config.h"
 #include "smarthome.h"
-#include <SmarthaurinHassEmbed.h>
 
 ADC_MODE(ADC_VCC);
 
 BME280 bme280;
-SmarthaurinHassEmbed smahe;
-
 #if STATIC_IP == 1
 IPAddress local_IP(IP);
 IPAddress gateway(GATEWAY);
@@ -21,9 +22,7 @@ IPAddress primaryDNS(PRIMARY_DNS);
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
-char client_id[19];
-char base_topic[30];
-char topic_state[50];
+char topic_state[70];
 
 // RTC is arranged into 4 byte blocks,
 // so we have to introduce some padding.
@@ -34,32 +33,16 @@ struct {
   uint8_t padding;  // 1 byte,  12 in total
 } rtcWifiData;
 
-#if DEBUG == 1
-  #define Sprint(a) (Serial.print(a))
-  #define Sprintln(a) (Serial.println(a))
-  #define Sprintf(a,b) (Serial.printf(a,b))
-#else
-  #define Sprint(a)
-  #define Sprintln(a)
-  #define Sprintf(a,b)
-#endif
-
 void goodnightEsp(uint32_t sec) {
-  delay(1);
+  delay(2000);
   ESP.deepSleep(sec * 1000000ULL, WAKE_RF_DISABLED);
 }
 
-int createTopic(char *dest, const char *suffix, size_t dest_length) {
-  strlcpy(dest, base_topic, dest_length);
-  strlcat(dest, suffix, dest_length);
-  return 0;
-}
-
-void publishMsg(const char *topic, const char *msg) {
-  Sprintf("Publishing to topic: %s, message: ", topic);
-  Sprintln(msg);
-  if (!mqttClient.publish(topic, msg)) {
-      Sprintln("Publishing failed");
+void publishMsg(const char *t, const char *m, bool r = false) {
+  SerPrintf("Publishing to topic: %s, message: ", t);
+  SerPrintln(m);
+  if (!mqttClient.publish(t, m, r)) {
+      SerPrintln("ERROR, Publishing failed");
   };
 }
 
@@ -80,20 +63,17 @@ uint32_t calculateCRC32(const uint8_t *data, size_t length) {
 
 void setup() {
   unsigned long timestamp;
-  char topic_config[50];
-  char msg_config[500];
+  char client_id[19], topic_base[50];
 
-#if DEBUG == 1
-  Serial.begin(115200);
-#endif
-  Sprintln("\nStarting measurement iteration");
+  SerBegin(115200);
+  SerPrintln("\nStarting measurement iteration");
 
   // Read WiFi settings from RTC memory
   bool rtcDataValid = false;
-  if( ESP.rtcUserMemoryRead( 0, (uint32_t*)&rtcWifiData, sizeof( rtcWifiData ) ) ) {
+  if(ESP.rtcUserMemoryRead(0, (uint32_t*)&rtcWifiData, sizeof(rtcWifiData))) {
     // Calculate and compare the CRC of read data from RTC memory, but skip the first 4 bytes, that's the checksum.
-    uint32_t crc = calculateCRC32( ((uint8_t*)&rtcWifiData) + 4, sizeof( rtcWifiData ) - 4 );
-    if( crc == rtcWifiData.crc32 ) {
+    uint32_t crc = calculateCRC32(((uint8_t*)&rtcWifiData) + 4, sizeof(rtcWifiData) - 4);
+    if(crc == rtcWifiData.crc32) {
       rtcDataValid = true;
     }
   }
@@ -108,22 +88,22 @@ void setup() {
   WiFi.mode(WIFI_STA);
 #if STATIC_IP == 1
   if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, INADDR_NONE)) {
-    Sprintln("Wifi failed to configure");
+    SerPrintln("ERROR, failed to configure Wifi");
   }
 #endif
 
   if (rtcDataValid) {
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD, rtcWifiData.channel, rtcWifiData.bssid, true);
-    Sprint("Starting specific wifi connection: ");
+    SerPrint("Starting specific wifi connection: ");
   } else {
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    Sprint("Starting general wifi connection: ");
+    SerPrint("Starting general wifi connection: ");
   }
   
   if (WiFi.waitForConnectResult(WIFI_TIMEOUT_SEC*1000) == WL_CONNECTED) {
-    Sprintln("success");
+    SerPrintln("success");
   } else {
-    Sprintln("failed, retrying");
+    SerPrintln("failed, retrying");
 
     WiFi.disconnect();
     delay(10);
@@ -132,31 +112,31 @@ void setup() {
     WiFi.forceSleepWake();
     delay(10);
 
-    Sprint("Starting general wifi connection: ");
+    SerPrint("Starting general wifi connection: ");
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     if (WiFi.waitForConnectResult(WIFI_TIMEOUT_SEC*1000) != WL_CONNECTED) {
-      Sprintln("failed, sleeping");
+      SerPrintln("failed, sleeping");
       goodnightEsp(SLEEP_TIME_ERROR_SEC);
     }
-    Sprintln("success");
+    SerPrintln("success");
   }
 
   // Write current connection info into RTC
   rtcWifiData.channel = WiFi.channel();
   memcpy(rtcWifiData.bssid, WiFi.BSSID(), 6);
-  rtcWifiData.crc32 = calculateCRC32( ((uint8_t*)&rtcWifiData) + 4, sizeof(rtcWifiData) - 4);
+  rtcWifiData.crc32 = calculateCRC32(((uint8_t*)&rtcWifiData) + 4, sizeof(rtcWifiData) - 4);
   ESP.rtcUserMemoryWrite(0, (uint32_t*)&rtcWifiData, sizeof(rtcWifiData));
   
-  if (snprintf(client_id, sizeof(client_id), "esp8266-%08X", ESP.getChipId()) >= (int) sizeof(client_id)) {
-    Sprintln("Mqtt client id cannot be constructed");
+  if (snprintf(client_id, sizeof(client_id), DEVICE_ID, EspChipId.get()) >= (int) sizeof(client_id)) {
+    SerPrintln("Mqtt client id cannot be constructed");
   };
   
   mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
   if (!mqttClient.setBufferSize(MQTT_BUFFER_SIZE)) {
-    Sprintln("Mqtt buffer cannot be resized");
+    SerPrintln("Mqtt buffer cannot be resized");
   }
 
-  Sprint("Starting mqtt connection: ");
+  SerPrint("Starting mqtt connection: ");
   timestamp = millis();
   while (!mqttClient.connected()) {
     if (mqttClient.connect(client_id, MQTT_USER, MQTT_PASSWORD)) {
@@ -167,63 +147,94 @@ void setup() {
       Serial.println("");
     }
     if (millis() > (timestamp + MQTT_TIMEOUT_SEC*1000)) {
-          Sprintln("");
-          Sprintln("Mqtt connect timeout, sleeping...");
+          SerPrintln("");
+          SerPrintln("Mqtt connect timeout, sleeping...");
           goodnightEsp(SLEEP_TIME_ERROR_SEC);
       }
   }
 
-  // if (snprintf(topic_state, sizeof(topic_state), TOPIC_HASS_STATE, client_id) >= (int) sizeof(topic_state)) {
-  //   Sprintln("Mqtt general state topic cannot be constructed");
-  // };
+  // CONFIGURE HASS STATE TOPICS
+  if (snprintf(topic_base, sizeof(topic_base), HASS_BASE_TOPIC, client_id) >= (int) sizeof(topic_base)) {
+    SerPrintln("ERROR, base topic cannot be constructed");
+  }
+  if (strlcpy(topic_state, topic_base, sizeof(topic_state)) >= sizeof(topic_state)) {
+        SerPrintln("ERROR, state topic cannot be copyied");
+  }
+  if (strlcat(topic_state, "/state", sizeof(topic_state)) >= sizeof(topic_state)) {
+    SerPrintln("ERROR, state topic cannot be constructed");
+  }
 
-  if (!smahe.getTopicSensorState(topic_state, sizeof(topic_state))){
-    Sprintln("Mqtt general state topic cannot be constructed");
-  };
+  if (false) {
+    char dev_conf[150], mac_addr[18];
+    uint8_t mac[6];
+    const char *configs[3] = {HASS_CONF_TEMP, HASS_CONF_HUM, HASS_CONF_BATT};
+    const char *suffixes[3] = {UID_TEMP_SUFFIX, UID_HUM_SUFFIX, UID_BATT_SUFFIX};
 
-  if (snprintf(msg_config, sizeof(msg_config), PAYLOAD_HASS_CONFIG_TEMP, topic_state, client_id, client_id, client_id) >= (int) sizeof(msg_config)) {
-    Sprintln("Mqtt temp config msg cannot be constructed");
-  };
-  if (snprintf(topic_config, sizeof(topic_config), TOPIC_HASS_CONFIG_TEMP, client_id) >= (int) sizeof(topic_config)) {
-    Sprintln("Mqtt config topic cannot be constructed");
-  };
-  // publish temperature configuration
-  publishMsg(topic_config, msg_config);
+    WiFi.macAddress(mac);
+    if (sprintf(mac_addr, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]) >= (int) sizeof(mac_addr)) {
+      SerPrintln("ERROR, mac address cannot be constructed");
+    }
+    if (snprintf(dev_conf, sizeof(dev_conf), HASS_CONF_DEVICE, mac_addr, EspChipId.get()) >= (int) sizeof(dev_conf)) {
+      SerPrintln("ERROR, device config cannot be constructed");
+    }
 
-  // if (snprintf(msg_config, sizeof(msg_config), PAYLOAD_HASS_CONFIG_HUM, topic_state, client_id, client_id) >= (int) sizeof(msg_config)) {
-  //   Sprintln("Mqtt humidity config msg cannot be constructed");
-  // };
-  // if (snprintf(topic_config, sizeof(topic_config), TOPIC_HASS_CONFIG_HUM, client_id) >= (int) sizeof(topic_config)) {
-  //   Sprintln("Mqtt config topic cannot be constructed");
-  // };
-  // // publish humidity configuration
-  // publishMsg(topic_config, msg_config);
+    for(int i=0; i < 3 ; i++) {
+      char config_doc[400], topic_config[50];
 
-  // if (snprintf(msg_config, sizeof(msg_config), PAYLOAD_HASS_CONFIG_BATT, topic_state, client_id, client_id) >= (int) sizeof(msg_config)) {
-  //   Sprintln("Mqtt battery config msg cannot be constructed");
-  // };
+      if (strlcpy(topic_config, topic_base, sizeof(topic_config)) >= sizeof(topic_config)) {
+        SerPrintln("ERROR, base topic cannot be copyied");
+      }
+      if (strlcat(topic_config, suffixes[i], sizeof(topic_config)) >= sizeof(topic_config)) {
+        SerPrintln("ERROR, config topic suffix cannot be constructed");
+      }
+      if (strlcat(topic_config, "/config", sizeof(topic_config)) >= sizeof(topic_config)) {
+        SerPrintln("ERROR, config topic cannot be constructed");
+      }
 
-  // if (snprintf(topic_config, sizeof(topic_config), TOPIC_HASS_CONFIG_BATT, client_id) >= (int) sizeof(topic_config)) {
-  //   Sprintln("Mqtt config topic cannot be constructed");
-  // };
-  // // publish battery configuration
-  // publishMsg(topic_config, msg_config);
+      StaticJsonDocument<512> doc;
+        DeserializationError error = deserializeJson(doc, configs[i]);
+        if (error) {
+            SerPrint("ERROR, deserialization failed: ");
+            SerPrintln(error.f_str());
+            return;
+        }
+        doc["~"] = topic_base;
+        doc["unique_id"] = client_id;
+        doc["dev"] = serialized(dev_conf);
 
-  // TODO add attributes like uptime, wifi signal, MAC
-  // if (snprintf(topic_config, sizeof(topic_config), "homeassistant/sensor/%s/attributes", client_id) >= (int) sizeof(topic_config)) {
-  //   Sprintln("Mqtt attribute topic cannot be constructed");
-  // };
-  // publishMsg(topic_config, PAYLOAD_HASS_ATTR);
+        if (measureJson(doc) >= sizeof(config_doc)) {
+          SerPrintln("ERROR, config document char array too short");
+          break;
+        }
+        serializeJson(doc, config_doc);
+        publishMsg(topic_config, config_doc, true);    
+    }
+  }
+
+  // PUBLISH HASS ATTRIBUTES
+  {
+    char topic[50], msg[100];
+    if (strlcpy(topic, topic_base, sizeof(topic)) >= sizeof(topic)) {
+      SerPrintln("ERROR, base topic cannot be copyied");
+    }
+    if (strlcat(topic, "/attributes", sizeof(topic)) >= sizeof(topic)) {
+          SerPrintln("ERROR, attributes topic cannot be constructed");
+    }
+    if (snprintf(msg, sizeof(msg), HASS_ATTRIBUTE_COLLECTION, WiFi.RSSI()) >= (int) sizeof(msg)) {
+      SerPrintln("ERROR, attribute collection cannot be constructed");
+    }
+    publishMsg(topic, msg);
+  }
 
   Wire.begin();
   if (Wire.status() == I2C_OK) {
     Wire.setClock(400000);
-    Sprintln("I2C runnig at 400KHz");
+    SerPrintln("I2C runnig at 400KHz");
   } else {
-    Sprintln("Cannot start I2C");
+    SerPrintln("Cannot start I2C");
   }
 
-  Sprint("Initialising BME280: ");
+  SerPrint("Initialising BME280: ");
   bme280.setI2CAddress(0x76);
 
   if (bme280.beginI2C()) {
@@ -232,14 +243,14 @@ void setup() {
     bme280.setTempOverSample(1);
     bme280.setHumidityOverSample(1);
     bme280.setFilter(0);
-    Sprintln("success");
+    SerPrintln("success");
   } else {
     // TODO FIX THIS
     // char topic[100];
     // if (createTopic(topic, TOPIC_SUFFIX_ERROR, sizeof(topic)) == 0) {
     //   publishMsg(topic, "bme280_failure");
     // };
-    Sprintln("failed");
+    SerPrintln("failed");
     goodnightEsp(SLEEP_TIME_ERROR_SEC);
   }
 }
@@ -247,28 +258,22 @@ void setup() {
 void loop() {
   int voltage_percentage = 0;
   char msg[100];
+  float voltage;
 
   bme280.setMode(MODE_FORCED);
 
-  Sprint("Measuring battery voltage: ");
-  float voltage = ESP.getVcc() / 1024.0f;
-  Sprint(voltage);
-
-  if (voltage < BATTERY_CR123A_LOW) {
-    voltage_percentage = 0;
-  } else if (voltage > BATTERY_CR123A_HIGH) {
-    voltage_percentage = 100;
-  } else {
-    voltage_percentage = (voltage - BATTERY_CR123A_LOW) * 100 / (BATTERY_CR123A_HIGH - BATTERY_CR123A_LOW);
-  }
-  Sprint(" = ");
-  Sprintln(voltage_percentage);
+  SerPrint("Measuring battery voltage: ");
+  voltage = ESP.getVcc() / 1024.0f;
+  SerPrint(voltage);
+  SerPrint(" = ");
+  voltage_percentage = MyBattery.calcCr123Percentage(voltage);
+  SerPrintln(voltage_percentage);
   
-  Sprintln("Starting temp hum measurement");
+  SerPrintln("Wating for temp hum measurement");
   while(bme280.isMeasuring() == true) ; // Wait until measurement is done
 
-  if (snprintf(msg, sizeof(msg), PAYLOAD_HASS_STATE, bme280.readTempC(), bme280.readFloatHumidity(), voltage_percentage) >= (int) sizeof(msg)) {
-    Sprintln("Mqtt state payload cannot be constructed");
+  if (snprintf(msg, sizeof(msg), HASS_PAYLOAD_STATE, bme280.readTempC(), bme280.readFloatHumidity(), voltage_percentage) >= (int) sizeof(msg)) {
+    SerPrintln("Mqtt state payload cannot be constructed");
   };
   publishMsg(topic_state, msg);
 
@@ -278,7 +283,7 @@ void loop() {
 
   mqttClient.disconnect();
   WiFi.disconnect(true);
-
-  Sprintln("All done, sleeping...");
+SerPrintln(millis());
+  SerPrintln("All done, sleeping...");
   goodnightEsp(SLEEP_TIME_REGULAR_SEC); 
 }

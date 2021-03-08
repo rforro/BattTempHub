@@ -1,28 +1,25 @@
-#define TOPIC_HASS_CONFIG_TEMP "homeassistant/sensor/%sT/config"
-#define TOPIC_HASS_CONFIG_HUM "homeassistant/sensor/%sH/config"
-#define TOPIC_HASS_CONFIG_BATT "homeassistant/sensor/%sB/config"
-#define TOPIC_HASS_STATE "homeassistant/sensor/%s/state"
-#define PAYLOAD_HASS_CONFIG_TEMP "{\"device_class\":\"temperature\",\"name\":\"Temperature\",\"state_topic\":\"%s\"\
-,\"unit_of_measurement\":\"°C\",\"value_template\":\"{{ value_json.temperature}}\",\"unique_id\":\"%s-temp\"\
-,\"expire_after\":\"86400\",\"json_attr_t\":\"homeassistant/sensor/%s/attributes\"\
-,\"device\":{\"name\":\"Smarthaurin-TempHumBatt\",\"model\":\"esp8266\",\"manufacturer\":\"espressif\",\"identifiers\":\"%s\"}\
-}"
-#define PAYLOAD_HASS_CONFIG_HUM "{\"device_class\":\"humidity\",\"name\":\"Humidity\",\"state_topic\":\"%s\"\
-,\"unit_of_measurement\":\"%%\",\"value_template\":\"{{ value_json.bme280_humidity}}\",\"unique_id\":\"%s-hum\"\
-,\"expire_after\":\"86400\"\
-,\"device\":{\"name\":\"Smarthaurin-TempHumBatt\",\"model\":\"esp8266\",\"manufacturer\":\"espressif\",\"identifiers\":\"%s\"}\
-}"
-#define PAYLOAD_HASS_CONFIG_BATT "{\"device_class\":\"battery\",\"name\":\"Battery\",\"state_topic\":\"%s\"\
-,\"unit_of_measurement\":\"%%\",\"value_template\":\"{{ value_json.battery}}\",\"unique_id\":\"%s-batt\"\
-,\"expire_after\":\"86400\"\
-,\"device\":{\"name\":\"Smarthaurin-TempHumBatt\",\"model\":\"esp8266\",\"manufacturer\":\"espressif\",\"identifiers\":\"%s\"}\
-}"
-#define PAYLOAD_HASS_STATE "{\"temperature\": \"%.1f\",\"bme280_humidity\":\"%.0f\",\"battery\":\"%i\"}"
+#define DEVICE_ID "esp8266-%08X"
 
-#define PAYLOAD_HASS_ATTR "{\"IP\":\"192.168.1.1\",\"RSSI\": \"-75\"}"
+#define HASS_BASE_TOPIC "homeassistant/sensor/%s"
 
-#define BATTERY_CR123A_HIGH 3.0
-#define BATTERY_CR123A_LOW 2.0
+#define UID_TEMP_SUFFIX "T"
+#define UID_HUM_SUFFIX "H"
+#define UID_BATT_SUFFIX "B"
+
+#define HASS_CONF_TEMP "{\"dev_cla\":\"temperature\",\"frc_upd\":\"true\",\"json_attr_t\":\"~/attributes\", \
+\"name\":\"Temperature\",\"stat_t\":\"~/state\",\"unit_of_meas\":\"°C\",\"val_tpl\":\"{{value_json.temp}}\", \
+\"exp_aft\":\"86400\"}"
+#define HASS_CONF_HUM "{\"dev_cla\":\"humidity\",\"frc_upd\":\"true\",\"json_attr_t\":\"~/attributes\", \
+\"name\":\"Humidity\",\"stat_t\":\"~/state\",\"unit_of_meas\":\"%\",\"val_tpl\":\"{{value_json.hum}}\", \
+\"exp_aft\":\"86400\"}"
+#define HASS_CONF_BATT "{\"dev_cla\":\"battery\",\"frc_upd\":\"true\",\"json_attr_t\":\"~/attributes\", \
+\"name\":\"Battery\",\"stat_t\":\"~/state\",\"unit_of_meas\":\"%\",\"val_tpl\":\"{{value_json.batt}}\", \
+\"exp_aft\":\"86400\"}"
+
+#define HASS_CONF_DEVICE "{\"cns\":[[\"mac\",\"%s\"]],\"ids\":\"%08X\",\"mf\":\"espressif\",\"mdl\":\"ESP8266\",\"name\":\"Battery Thermometer\"}"
+
+#define HASS_ATTRIBUTE_COLLECTION "{\"RSSI\":\"%i\"}"
+#define HASS_PAYLOAD_STATE "{\"temp\":\"%.1f\",\"hum\":\"%.0f\",\"batt\":\"%i\"}"
 
 #define SLEEP_TIME_ERROR_SEC (30*60)
 #define SLEEP_TIME_REGULAR_SEC (60*60)
