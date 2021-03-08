@@ -193,7 +193,7 @@ void setup() {
     }
 
     for(int i=0; i < 3 ; i++) {
-      char config_doc[400], topic_config[50];
+      char config_doc[400], topic_config[50], uid[20];
 
       if (strlcpy(topic_config, topic_base, sizeof(topic_config)) >= sizeof(topic_config)) {
         SerPrintln("ERROR, base topic cannot be copyied");
@@ -204,6 +204,12 @@ void setup() {
       if (strlcat(topic_config, "/config", sizeof(topic_config)) >= sizeof(topic_config)) {
         SerPrintln("ERROR, config topic cannot be constructed");
       }
+      if (strlcpy(uid, client_id, sizeof(uid)) >= sizeof(uid)) {
+        SerPrintln("ERROR, uid cannot be copyied");
+      }
+      if (strlcat(uid, suffixes[i], sizeof(uid)) >= sizeof(uid)) {
+        SerPrintln("ERROR, uid cannot be constructed");
+      }
 
       StaticJsonDocument<512> doc;
         DeserializationError error = deserializeJson(doc, configs[i]);
@@ -213,7 +219,7 @@ void setup() {
             return;
         }
         doc["~"] = topic_base;
-        doc["unique_id"] = client_id;
+        doc["unique_id"] = uid;
         doc["dev"] = serialized(dev_conf);
 
         if (measureJson(doc) >= sizeof(config_doc)) {
@@ -221,7 +227,10 @@ void setup() {
           break;
         }
         serializeJson(doc, config_doc);
-        publishMsg(topic_config, config_doc, true);    
+        publishMsg(topic_config, config_doc, true);
+        // slow down publishing, homeassistant needs some time for registration
+        mqttClient.loop();
+        delay(500);
     }
   }
 
