@@ -10,6 +10,10 @@
 #include "config.h"
 #include "smarthome.h"
 
+extern "C" {
+#include "user_interface.h"
+}
+
 ADC_MODE(ADC_VCC);
 
 BME280 bme280;
@@ -22,8 +26,6 @@ IPAddress primaryDNS(PRIMARY_DNS);
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
-char topic_state[70];
-
 // RTC is arranged into 4 byte blocks,
 // so we have to introduce some padding.
 struct {
@@ -34,7 +36,7 @@ struct {
 } rtcWifiData;
 
 void goodnightEsp(uint32_t sec) {
-  delay(10);
+  delay(1000);
   ESP.deepSleep(sec * 1000000ULL, WAKE_RF_DISABLED);
 }
 
@@ -63,18 +65,19 @@ uint32_t calculateCRC32(const uint8_t *data, size_t length) {
 
 void setup() {
   unsigned long timestamp;
-  char client_id[19], topic_base[50];
+  char client_id[19], topic_base[50], topic_state[70], msg[100];
   int voltage_percentage;
   float voltage;
+  rst_info *resetInfo;
 
   SerBegin(115200);
   SerPrintln("\nStarting measurement iteration");
 
   SerPrint("Measuring battery voltage: ");
   voltage = ESP.getVcc() / 1024.0f;
+  voltage_percentage = MyBattery.calcCr123Percentage(voltage);
   SerPrint(voltage);
   SerPrint(" = ");
-  voltage_percentage = MyBattery.calcCr123Percentage(voltage);
   SerPrintln(voltage_percentage);
   if (voltage_percentage == 0) goodnightEsp(0);
 
@@ -173,8 +176,9 @@ void setup() {
   if (strlcat(topic_state, "/state", sizeof(topic_state)) >= sizeof(topic_state)) {
     SerPrintln("ERROR, state topic cannot be constructed");
   }
-
-  if (false) {
+  
+  resetInfo = ESP.getResetInfoPtr();
+  if (resetInfo->reason != REASON_DEEP_SLEEP_AWAKE) {
     char dev_conf[150], mac_addr[18];
     uint8_t mac[6];
     const char *configs[3] = {HASS_CONF_TEMP, HASS_CONF_HUM, HASS_CONF_BATT};
@@ -223,7 +227,7 @@ void setup() {
 
   // PUBLISH HASS ATTRIBUTES
   {
-    char topic[50], msg[100];
+    char topic[50];
     if (strlcpy(topic, topic_base, sizeof(topic)) >= sizeof(topic)) {
       SerPrintln("ERROR, base topic cannot be copyied");
     }
@@ -264,28 +268,25 @@ void setup() {
     goodnightEsp(SLEEP_TIME_ERROR_SEC);
   }
 
-  {
-    char msg[100];
 
-    bme280.setMode(MODE_FORCED);    
-    SerPrintln("Wating for temp hum measurement");
-    while(bme280.isMeasuring() == true) ; // Wait until measurement is done
+  bme280.setMode(MODE_FORCED);    
+  SerPrintln("Wating for temp hum measurement");
+  while(bme280.isMeasuring() == true) ; // Wait until measurement is done
 
-    if (snprintf(msg, sizeof(msg), HASS_PAYLOAD_STATE, bme280.readTempC(), bme280.readFloatHumidity(), voltage_percentage) >= (int) sizeof(msg)) {
-      SerPrintln("Mqtt state payload cannot be constructed");
-    };
-    publishMsg(topic_state, msg);
+  if (snprintf(msg, sizeof(msg), HASS_PAYLOAD_STATE, bme280.readTempC(), bme280.readFloatHumidity(), voltage_percentage) >= (int) sizeof(msg)) {
+    SerPrintln("Mqtt state payload cannot be constructed");
+  };
+  publishMsg(topic_state, msg);
 
 
-    mqttClient.loop();
-    // delay(100);  // leave some time for pubsubclient
+  mqttClient.loop();
+  // delay(100);  // leave some time for pubsubclient
 
-    mqttClient.disconnect();
-    WiFi.disconnect(true);
+  mqttClient.disconnect();
+  WiFi.disconnect(true);
 
-    SerPrintln("All done, sleeping...");
-    goodnightEsp(SLEEP_TIME_REGULAR_SEC);
-  }
+  SerPrintln("All done, sleeping...");
+  goodnightEsp(SLEEP_TIME_REGULAR_SEC);
 }
 
 void loop() {}
