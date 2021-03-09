@@ -45,7 +45,7 @@ struct {
 BME280_SensorMeasurements measurements;
 
 void goodnightEsp(uint32_t sec) {
-  delay(1000);
+  delay(100);
   ESP.deepSleep(sec * 1000000ULL, WAKE_RF_DISABLED);
 }
 
@@ -132,11 +132,11 @@ void setup() {
   SerPrint("Initialising BME280: ");
   bme280.setI2CAddress(0x76);
   if (bme280.beginI2C()) {
+    bme280.setMode(MODE_SLEEP);
     bme280.setPressureOverSample(0);  // disable pressure measurements
     bme280.setTempOverSample(1);
     bme280.setHumidityOverSample(1);
     bme280.setFilter(0);
-    // bme280.setMode(MODE_SLEEP);
     SerPrintln("success");
   } else {
     // TODO FIX THIS
@@ -147,8 +147,6 @@ void setup() {
     SerPrintln("failed");
     goodnightEsp(SLEEP_TIME_ERROR_SEC);
   }
-  bme280.setMode(MODE_FORCED);
-
 
   // TURN ON WIFI
   // Read WiFi settings from RTC memory
@@ -174,6 +172,9 @@ void setup() {
     SerPrintln("ERROR, failed to configure Wifi");
   }
 #endif
+
+  // BME280 TAKE SINGEL MEASUREMENT, NEED LITTLE PAUSE AFTER INIT
+  bme280.setMode(MODE_FORCED);
 
   if (rtcDataValid) {
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD, rtcWifiData.channel, rtcWifiData.bssid, true);
@@ -229,11 +230,11 @@ void setup() {
   timestamp = millis();
   while (!mqttClient.connected()) {
     if (mqttClient.connect(client_id, MQTT_USER, MQTT_PASSWORD)) {
-      Serial.println("connected");
+      SerPrintln("connected");
     } else {
-      Serial.print("failed, rc=");
-      Serial.print(mqttClient.state());
-      Serial.println("");
+      SerPrintln("failed, rc=");
+      SerPrint(mqttClient.state());
+      SerPrintln("");
     }
     if (millis() > (timestamp + MQTT_TIMEOUT_SEC*1000)) {
           SerPrintln("");
@@ -333,7 +334,7 @@ void setup() {
   publishMsg(topic_state, msg);
 
   mqttClient.loop();
-  delay(100);  // leave some time for pubsubclient
+  delay(300);  // leave some time for pubsubclient
 
   displayOff();
   mqttClient.disconnect();
