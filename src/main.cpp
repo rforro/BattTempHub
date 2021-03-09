@@ -42,6 +42,8 @@ struct {
   uint8_t padding;  // 1 byte,  12 in total
 } rtcWifiData;
 
+BME280_SensorMeasurements measurements;
+
 void goodnightEsp(uint32_t sec) {
   delay(1000);
   ESP.deepSleep(sec * 1000000ULL, WAKE_RF_DISABLED);
@@ -130,11 +132,11 @@ void setup() {
   SerPrint("Initialising BME280: ");
   bme280.setI2CAddress(0x76);
   if (bme280.beginI2C()) {
-    bme280.setMode(MODE_SLEEP);
     bme280.setPressureOverSample(0);  // disable pressure measurements
     bme280.setTempOverSample(1);
     bme280.setHumidityOverSample(1);
     bme280.setFilter(0);
+    // bme280.setMode(MODE_SLEEP);
     SerPrintln("success");
   } else {
     // TODO FIX THIS
@@ -183,7 +185,8 @@ void setup() {
 
   //DISPLAY ON EPAPER
   while(bme280.isMeasuring() == true) ; // Wait until measurement is done
-  displayValues(bme280.readTempC(), (int)bme280.readFloatHumidity(), voltage_percentage);
+  bme280.readAllMeasurements(&measurements, 0);
+  displayValues(measurements.temperature, (int)measurements.humidity, voltage_percentage);
   
   if (WiFi.waitForConnectResult(WIFI_TIMEOUT_SEC*1000) == WL_CONNECTED) {
     SerPrintln("success");
@@ -323,13 +326,14 @@ void setup() {
   }
   
   // PUBLISH MEASUREMENTS
-  if (snprintf(msg, sizeof(msg), HASS_PAYLOAD_STATE, bme280.readTempC(), bme280.readFloatHumidity(), voltage_percentage) >= (int) sizeof(msg)) {
+  if (snprintf(msg, sizeof(msg), HASS_PAYLOAD_STATE, measurements.temperature, measurements.humidity,
+      voltage_percentage) >= (int) sizeof(msg)) {
     SerPrintln("Mqtt state payload cannot be constructed");
   };
   publishMsg(topic_state, msg);
 
   mqttClient.loop();
-  // delay(100);  // leave some time for pubsubclient
+  delay(100);  // leave some time for pubsubclient
 
   displayOff();
   mqttClient.disconnect();
