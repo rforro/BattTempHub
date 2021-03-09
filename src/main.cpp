@@ -1,12 +1,18 @@
 #include <Arduino.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_BusIO_Register.h>
 #include <ArduinoJson.h>
 #include <ESP8266WiFi.h>
 #include <EspChipId.h>
+#include <Fonts/FreeSans24pt7b.h>
+#include <Fonts/FreeSansOblique9pt7b.h>
+#include <GxEPD2_BW.h>
 #include <MyBattery.h>
 #include <PubSubClient.h>
 #include <SerPrint.h>
 #include <SparkFunBME280.h>
 #include <Wire.h>
+#include "graphics.h"
 #include "config.h"
 #include "smarthome.h"
 
@@ -25,6 +31,7 @@ IPAddress primaryDNS(PRIMARY_DNS);
 #endif
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
+GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display(GxEPD2_154_D67(/*CS*/ 3, /*DC*/ D3, /*RST*/ D8, /*BUSY*/ D4));
 
 // RTC is arranged into 4 byte blocks,
 // so we have to introduce some padding.
@@ -63,6 +70,36 @@ uint32_t calculateCRC32(const uint8_t *data, size_t length) {
   return crc;
 }
 
+void displayValues(float temp, int hum, int batt) {
+  display.init();
+
+  display.setFullWindow();
+  display.setRotation(1);
+  display.fillScreen(GxEPD_WHITE);
+  
+  display.drawInvertedBitmap(0, 0, gImage_main, 200, 200, GxEPD_BLACK);
+  display.setTextColor(GxEPD_WHITE);
+  display.setFont(&FreeSansOblique9pt7b);
+  if (batt != 100) {
+    display.setCursor(162, 24);
+  } else {
+    display.setCursor(156, 24);
+  }  
+  display.print(batt);
+  display.setTextColor(GxEPD_BLACK);
+  display.setFont(&FreeSans24pt7b);
+  display.setCursor(55, 85);
+  display.print(temp,1);
+  display.setCursor(95, 172);
+  display.print(hum);
+  display.display();
+}
+
+void displayOff() {
+  display.powerOff();
+  display.hibernate();
+}
+
 void setup() {
   unsigned long timestamp;
   char client_id[19], topic_base[50], topic_state[70], msg[100];
@@ -81,6 +118,37 @@ void setup() {
   SerPrintln(voltage_percentage);
   if (voltage_percentage == 0) goodnightEsp(0);
 
+  // START BME280
+  Wire.begin();
+  if (Wire.status() == I2C_OK) {
+    Wire.setClock(400000);
+    SerPrintln("I2C runnig at 400KHz");
+  } else {
+    SerPrintln("Cannot start I2C");
+  }
+
+  SerPrint("Initialising BME280: ");
+  bme280.setI2CAddress(0x76);
+  if (bme280.beginI2C()) {
+    bme280.setMode(MODE_SLEEP);
+    bme280.setPressureOverSample(0);  // disable pressure measurements
+    bme280.setTempOverSample(1);
+    bme280.setHumidityOverSample(1);
+    bme280.setFilter(0);
+    SerPrintln("success");
+  } else {
+    // TODO FIX THIS
+    // char topic[100];
+    // if (createTopic(topic, TOPIC_SUFFIX_ERROR, sizeof(topic)) == 0) {
+    //   publishMsg(topic, "bme280_failure");
+    // };
+    SerPrintln("failed");
+    goodnightEsp(SLEEP_TIME_ERROR_SEC);
+  }
+  bme280.setMode(MODE_FORCED);
+
+
+  // TURN ON WIFI
   // Read WiFi settings from RTC memory
   bool rtcDataValid = false;
   if(ESP.rtcUserMemoryRead(0, (uint32_t*)&rtcWifiData, sizeof(rtcWifiData))) {
@@ -112,6 +180,10 @@ void setup() {
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     SerPrint("Starting general wifi connection: ");
   }
+
+  //DISPLAY ON EPAPER
+  while(bme280.isMeasuring() == true) ; // Wait until measurement is done
+  displayValues(bme280.readTempC(), (int)bme280.readFloatHumidity(), voltage_percentage);
   
   if (WiFi.waitForConnectResult(WIFI_TIMEOUT_SEC*1000) == WL_CONNECTED) {
     SerPrintln("success");
@@ -140,6 +212,7 @@ void setup() {
   rtcWifiData.crc32 = calculateCRC32(((uint8_t*)&rtcWifiData) + 4, sizeof(rtcWifiData) - 4);
   ESP.rtcUserMemoryWrite(0, (uint32_t*)&rtcWifiData, sizeof(rtcWifiData));
   
+  // START MQTT
   if (snprintf(client_id, sizeof(client_id), DEVICE_ID, EspChipId.get()) >= (int) sizeof(client_id)) {
     SerPrintln("Mqtt client id cannot be constructed");
   };
@@ -239,49 +312,17 @@ void setup() {
     }
     publishMsg(topic, msg);
   }
-
-  Wire.begin();
-  if (Wire.status() == I2C_OK) {
-    Wire.setClock(400000);
-    SerPrintln("I2C runnig at 400KHz");
-  } else {
-    SerPrintln("Cannot start I2C");
-  }
-
-  SerPrint("Initialising BME280: ");
-  bme280.setI2CAddress(0x76);
-
-  if (bme280.beginI2C()) {
-    bme280.setMode(MODE_SLEEP);
-    bme280.setPressureOverSample(0);  // disable pressure measurements
-    bme280.setTempOverSample(1);
-    bme280.setHumidityOverSample(1);
-    bme280.setFilter(0);
-    SerPrintln("success");
-  } else {
-    // TODO FIX THIS
-    // char topic[100];
-    // if (createTopic(topic, TOPIC_SUFFIX_ERROR, sizeof(topic)) == 0) {
-    //   publishMsg(topic, "bme280_failure");
-    // };
-    SerPrintln("failed");
-    goodnightEsp(SLEEP_TIME_ERROR_SEC);
-  }
-
-
-  bme280.setMode(MODE_FORCED);    
-  SerPrintln("Wating for temp hum measurement");
-  while(bme280.isMeasuring() == true) ; // Wait until measurement is done
-
+  
+  // PUBLISH MEASUREMENTS
   if (snprintf(msg, sizeof(msg), HASS_PAYLOAD_STATE, bme280.readTempC(), bme280.readFloatHumidity(), voltage_percentage) >= (int) sizeof(msg)) {
     SerPrintln("Mqtt state payload cannot be constructed");
   };
   publishMsg(topic_state, msg);
 
-
   mqttClient.loop();
   // delay(100);  // leave some time for pubsubclient
 
+  displayOff();
   mqttClient.disconnect();
   WiFi.disconnect(true);
 
