@@ -135,7 +135,9 @@ void setup() {
   SerPrint(" = ");
   SerPrintln(voltage_percentage);
   if (voltage_percentage == 0) {
+  #ifdef EPAPER
     displayLowBatt();
+  #endif
     goodnightEsp(0);
   }
 
