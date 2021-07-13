@@ -78,13 +78,22 @@ uint32_t calculateCRC32(const uint8_t *data, size_t length) {
 }
 
 #ifdef EPAPER
-void displayValues(float temp, int hum, int batt) {
+void displayBase() {
   display.init();
-
   display.setFullWindow();
   display.setRotation(1);
   display.fillScreen(GxEPD_WHITE);
-  
+}
+
+void displayLowBatt() {
+  displayBase();
+  display.drawInvertedBitmap(0, 0, gImage_low_batt, 200, 200, GxEPD_BLACK);
+  display.display();
+}
+
+void displayValues(float temp, int hum, int batt) {
+  displayBase();
+
   display.drawInvertedBitmap(0, 0, gImage_main, 200, 200, GxEPD_BLACK);
   display.setTextColor(GxEPD_WHITE);
   display.setFont(&FreeSansOblique9pt7b);
@@ -126,7 +135,7 @@ void setup() {
   SerPrint(" = ");
   SerPrintln(voltage_percentage);
   if (voltage_percentage == 0) {
-    // ToDo if 0 show it on Epaper
+    displayLowBatt();
     goodnightEsp(0);
   }
 
