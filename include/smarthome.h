@@ -18,7 +18,7 @@
 
 #define HASS_CONF_DEVICE "{\"cns\":[[\"mac\",\"%s\"]],\"ids\":\"%08X\",\"mf\":\"espressif\",\"mdl\":\"ESP8266\",\"name\":\"Battery Thermometer\"}"
 
-#define HASS_ATTRIBUTE_COLLECTION "{\"RSSI\":\"%i\"}"
+#define HASS_ATTRIBUTE_COLLECTION "{\"RSSI\":\"%i\",\"Voltage\":\"%.3f\"}"
 #define HASS_PAYLOAD_STATE "{\"temp\":\"%.1f\",\"hum\":\"%.0f\",\"batt\":\"%i\"}"
 
 #define SLEEP_TIME_ERROR_SEC (30*60)

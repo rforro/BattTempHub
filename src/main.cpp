@@ -118,7 +118,10 @@ void setup() {
   SerPrint(voltage);
   SerPrint(" = ");
   SerPrintln(voltage_percentage);
-  if (voltage_percentage == 0) goodnightEsp(0);
+  if (voltage_percentage == 0) {
+    // ToDo if 0 show it on Epaper
+    goodnightEsp(0);
+  }
 
   // START BME280
   Wire.begin();
@@ -139,11 +142,6 @@ void setup() {
     bme280.setFilter(0);
     SerPrintln("success");
   } else {
-    // TODO FIX THIS
-    // char topic[100];
-    // if (createTopic(topic, TOPIC_SUFFIX_ERROR, sizeof(topic)) == 0) {
-    //   publishMsg(topic, "bme280_failure");
-    // };
     SerPrintln("failed");
     goodnightEsp(SLEEP_TIME_ERROR_SEC);
   }
@@ -281,8 +279,9 @@ void setup() {
       if (strlcat(topic_config, "/config", sizeof(topic_config)) >= sizeof(topic_config)) {
         SerPrintln("ERROR, config topic cannot be constructed");
       }
-      if (strlcpy(uid, client_id, sizeof(uid)) >= sizeof(uid)) {
-        SerPrintln("ERROR, uid cannot be copyied");
+      int len_sn = snprintf(uid, sizeof(uid), "%08X", EspChipId.get());
+      if (len_sn < 0 || (unsigned) len_sn >= (int) sizeof(uid)) {
+        SerPrintln("Client id cannot be constructed");
       }
       if (strlcat(uid, suffixes[i], sizeof(uid)) >= sizeof(uid)) {
         SerPrintln("ERROR, uid cannot be constructed");
@@ -320,7 +319,7 @@ void setup() {
     if (strlcat(topic, "/attributes", sizeof(topic)) >= sizeof(topic)) {
           SerPrintln("ERROR, attributes topic cannot be constructed");
     }
-    if (snprintf(msg, sizeof(msg), HASS_ATTRIBUTE_COLLECTION, WiFi.RSSI()) >= (int) sizeof(msg)) {
+    if (snprintf(msg, sizeof(msg), HASS_ATTRIBUTE_COLLECTION, WiFi.RSSI(), voltage) >= (int) sizeof(msg)) {
       SerPrintln("ERROR, attribute collection cannot be constructed");
     }
     publishMsg(topic, msg);
