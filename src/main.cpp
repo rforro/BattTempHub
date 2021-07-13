@@ -19,13 +19,10 @@
 #include "graphics.h"
 #endif
 
-extern "C" {
-#include "user_interface.h"
-}
-
 ADC_MODE(ADC_VCC);
 
 BME280 bme280;
+BME280_SensorMeasurements measurements;
 #if STATIC_IP == 1
 IPAddress local_IP(IP);
 IPAddress gateway(GATEWAY);
@@ -38,17 +35,6 @@ PubSubClient mqttClient(wifiClient);
 GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display(GxEPD2_154_D67(/*CS*/ 3, /*DC*/ D3, /*RST*/ D8, /*BUSY*/ D4));
 #endif
 
-// RTC is arranged into 4 byte blocks,
-// so we have to introduce some padding.
-struct {
-  uint32_t crc32;   // 4 bytes
-  uint8_t channel;  // 1 byte,   5 in total
-  uint8_t bssid[6]; // 6 bytes, 11 in total
-  uint8_t padding;  // 1 byte,  12 in total
-} rtcWifiData;
-
-BME280_SensorMeasurements measurements;
-
 void goodnightEsp(uint32_t sec) {
   delay(100);
   ESP.deepSleep(sec * 1000000ULL, WAKE_RF_DISABLED);
@@ -60,21 +46,6 @@ void publishMsg(const char *t, const char *m, bool r = false) {
   if (!mqttClient.publish(t, m, r)) {
       SerPrintln("ERROR, Publishing failed");
   };
-}
-
-uint32_t calculateCRC32(const uint8_t *data, size_t length) {
-  uint32_t crc = 0xffffffff;
-  while (length--) {
-    uint8_t c = *data++;
-    for (uint32_t i = 0x80; i > 0; i >>= 1) {
-      bool bit = crc & 0x80000000;
-      if (c & i) bit = !bit;
-
-      crc <<= 1;
-      if (bit) crc ^= 0x04c11db7;
-    }
-  }
-  return crc;
 }
 
 #ifdef EPAPER
@@ -164,41 +135,15 @@ void setup() {
     goodnightEsp(SLEEP_TIME_ERROR_SEC);
   }
 
-  // TURN ON WIFI
-  // Read WiFi settings from RTC memory
-  bool rtcDataValid = false;
-  if(ESP.rtcUserMemoryRead(0, (uint32_t*)&rtcWifiData, sizeof(rtcWifiData))) {
-    // Calculate and compare the CRC of read data from RTC memory, but skip the first 4 bytes, that's the checksum.
-    uint32_t crc = calculateCRC32(((uint8_t*)&rtcWifiData) + 4, sizeof(rtcWifiData) - 4);
-    if(crc == rtcWifiData.crc32) {
-      rtcDataValid = true;
-    }
-  }
-
-  // reanable wifi radio
-  WiFi.forceSleepBegin();
-  delay(1);
-  WiFi.forceSleepWake();
-  delay(1);
-
-  WiFi.persistent(false);
-  WiFi.mode(WIFI_STA);
 #if STATIC_IP == 1
   if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, INADDR_NONE)) {
     SerPrintln("ERROR, failed to configure Wifi");
   }
 #endif
+  WiFi.begin();
 
   // BME280 TAKE SINGEL MEASUREMENT, NEED LITTLE PAUSE AFTER INIT
   bme280.setMode(MODE_FORCED);
-
-  if (rtcDataValid) {
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD, rtcWifiData.channel, rtcWifiData.bssid, true);
-    SerPrint("Starting specific wifi connection: ");
-  } else {
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    SerPrint("Starting general wifi connection: ");
-  }
 
   //DISPLAY ON EPAPER
   while(bme280.isMeasuring() == true) ; // Wait until measurement is done
@@ -207,17 +152,11 @@ void setup() {
   displayValues(measurements.temperature, (int)measurements.humidity, voltage_percentage);
 #endif
 
+  SerPrintln("Waiting for Wifi to connect: ");
   if (WiFi.waitForConnectResult(WIFI_TIMEOUT_SEC*1000) == WL_CONNECTED) {
     SerPrintln("success");
   } else {
     SerPrintln("failed, retrying");
-
-    WiFi.disconnect();
-    delay(10);
-    WiFi.forceSleepBegin();
-    delay(10);
-    WiFi.forceSleepWake();
-    delay(10);
 
     SerPrint("Starting general wifi connection: ");
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -228,12 +167,6 @@ void setup() {
     SerPrintln("success");
   }
 
-  // Write current connection info into RTC
-  rtcWifiData.channel = WiFi.channel();
-  memcpy(rtcWifiData.bssid, WiFi.BSSID(), 6);
-  rtcWifiData.crc32 = calculateCRC32(((uint8_t*)&rtcWifiData) + 4, sizeof(rtcWifiData) - 4);
-  ESP.rtcUserMemoryWrite(0, (uint32_t*)&rtcWifiData, sizeof(rtcWifiData));
-  
   // START MQTT
   if (snprintf(client_id, sizeof(client_id), DEVICE_ID, EspChipId.get()) >= (int) sizeof(client_id)) {
     SerPrintln("Mqtt client id cannot be constructed");
@@ -359,10 +292,10 @@ void setup() {
   displayOff();
 #endif
   mqttClient.disconnect();
-  WiFi.disconnect(true);
 
   SerPrintln("All done, sleeping...");
-  goodnightEsp(SLEEP_TIME_REGULAR_SEC);
+  SerPrintln(millis());
+  goodnightEsp(30);
 }
 
 void loop() {}
