@@ -1,20 +1,23 @@
 #include <Arduino.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_BusIO_Register.h>
 #include <ArduinoJson.h>
 #include <ESP8266WiFi.h>
 #include <EspChipId.h>
-#include <Fonts/FreeSans24pt7b.h>
-#include <Fonts/FreeSansOblique9pt7b.h>
-#include <GxEPD2_BW.h>
 #include <MyBattery.h>
 #include <PubSubClient.h>
 #include <SerPrint.h>
 #include <SparkFunBME280.h>
 #include <Wire.h>
-#include "graphics.h"
 #include "config.h"
 #include "smarthome.h"
+
+#ifdef EPAPER
+#include <Adafruit_GFX.h>
+#include <Adafruit_BusIO_Register.h>
+#include <Fonts/FreeSans24pt7b.h>
+#include <Fonts/FreeSansOblique9pt7b.h>
+#include <GxEPD2_BW.h>
+#include "graphics.h"
+#endif
 
 extern "C" {
 #include "user_interface.h"
@@ -31,7 +34,9 @@ IPAddress primaryDNS(PRIMARY_DNS);
 #endif
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
+#ifdef EPAPER
 GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display(GxEPD2_154_D67(/*CS*/ 3, /*DC*/ D3, /*RST*/ D8, /*BUSY*/ D4));
+#endif
 
 // RTC is arranged into 4 byte blocks,
 // so we have to introduce some padding.
@@ -72,6 +77,7 @@ uint32_t calculateCRC32(const uint8_t *data, size_t length) {
   return crc;
 }
 
+#ifdef EPAPER
 void displayValues(float temp, int hum, int batt) {
   display.init();
 
@@ -101,6 +107,7 @@ void displayOff() {
   display.powerOff();
   display.hibernate();
 }
+#endif
 
 void setup() {
   unsigned long timestamp;
@@ -185,8 +192,10 @@ void setup() {
   //DISPLAY ON EPAPER
   while(bme280.isMeasuring() == true) ; // Wait until measurement is done
   bme280.readAllMeasurements(&measurements, 0);
+#ifdef EPAPER
   displayValues(measurements.temperature, (int)measurements.humidity, voltage_percentage);
-  
+#endif
+
   if (WiFi.waitForConnectResult(WIFI_TIMEOUT_SEC*1000) == WL_CONNECTED) {
     SerPrintln("success");
   } else {
@@ -335,7 +344,9 @@ void setup() {
   mqttClient.loop();
   delay(300);  // leave some time for pubsubclient
 
+#ifdef EPAPER
   displayOff();
+#endif
   mqttClient.disconnect();
   WiFi.disconnect(true);
 
