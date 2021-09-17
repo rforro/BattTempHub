@@ -3,6 +3,7 @@
 #include <ESP8266WiFi.h>
 #include <EspChipId.h>
 #include <MyBattery.h>
+#include <EspNtpTime.h>
 #include <PubSubClient.h>
 #include <SerPrint.h>
 #include <SparkFunBME280.h>
@@ -29,7 +30,8 @@ IPAddress gateway(GATEWAY);
 IPAddress subnet(SUBNET);
 IPAddress primaryDNS(PRIMARY_DNS);
 #endif
-WiFiClient wifiClient;
+EspNtpTime ntptime;
+WiFiClientSecure wifiClient;
 PubSubClient mqttClient(wifiClient);
 #ifdef EPAPER
 GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display(GxEPD2_154_D67(/*CS*/ 3, /*DC*/ D3, /*RST*/ D8, /*BUSY*/ D4));
@@ -167,20 +169,32 @@ void setup() {
     SerPrintln("success");
   }
 
+  ntptime.init();
+
   // START MQTT
   if (snprintf(client_id, sizeof(client_id), DEVICE_ID, EspChipId.get()) >= (int) sizeof(client_id)) {
     SerPrintln("Mqtt client id cannot be constructed");
   };
   
+  BearSSL::X509List *serverTrustedCA = new BearSSL::X509List(ca_cert);
+  BearSSL::X509List *serverCertList = new BearSSL::X509List(client_cert);
+  BearSSL::PrivateKey *serverPrivKey = new BearSSL::PrivateKey(client_private_key);
+  wifiClient.setTrustAnchors(serverTrustedCA);
+  wifiClient.setClientRSACert(serverCertList, serverPrivKey);
   mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
   if (!mqttClient.setBufferSize(MQTT_BUFFER_SIZE)) {
     SerPrintln("Mqtt buffer cannot be resized");
   }
 
+  if (!ntptime.waitForTime()) {
+    SerPrintln("NTP failed");
+    goodnightEsp(SLEEP_TIME_ERROR_SEC);
+  }
+
   SerPrint("Starting mqtt connection: ");
   timestamp = millis();
   while (!mqttClient.connected()) {
-    if (mqttClient.connect(client_id, MQTT_USER, MQTT_PASSWORD)) {
+    if (mqttClient.connect(client_id)) {
       SerPrintln("connected");
     } else {
       SerPrintln("failed, rc=");
@@ -295,7 +309,7 @@ void setup() {
 
   SerPrintln("All done, sleeping...");
   SerPrintln(millis());
-  goodnightEsp(30);
+  goodnightEsp(SLEEP_TIME_REGULAR_SEC);
 }
 
 void loop() {}

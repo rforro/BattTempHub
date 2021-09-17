@@ -21,8 +21,8 @@
 #define HASS_ATTRIBUTE_COLLECTION "{\"RSSI\":\"%i\",\"Voltage\":\"%.3f\"}"
 #define HASS_PAYLOAD_STATE "{\"temp\":\"%.1f\",\"hum\":\"%.0f\",\"batt\":\"%i\"}"
 
-#define SLEEP_TIME_ERROR_SEC (30*60)
-#define SLEEP_TIME_REGULAR_SEC (60*60)
+#define SLEEP_TIME_ERROR_SEC (15*60)
+#define SLEEP_TIME_REGULAR_SEC (30*60)
 
 #define WIFI_TIMEOUT_SEC 30
 #define MQTT_TIMEOUT_SEC 15
